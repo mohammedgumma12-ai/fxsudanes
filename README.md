@@ -27,20 +27,21 @@ The server checks the database and creates/updates the admin account from `ADMIN
 2. Run `schema.sql` in the Neon SQL Editor before deploying.
 3. Import this Git repository into Vercel. The Express app is exported from `server.js`; frontend assets are in `public/` and served by Vercel's static asset CDN.
 4. Add these Vercel environment variables for Production:
-	- `NODE_ENV=production`
-	- `DATABASE_URL` from Neon
-	- `SESSION_SECRET` with a unique random value of at least 32 characters
-	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (password must be at least 10 characters)
-	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app`
-	- `TRC20_WALLET_ADDRESS` and `TELEGRAM_SUPPORT_URL` for payment/support details
-	- `GEMINI_API_KEY` and `PRIVATE_CHANNEL_URL` if those features are used
+	- `DATABASE_URL` from Neon (required)
+	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (required; password must be at least 10 characters)
+	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app` (recommended for origin checks)
+	- `GEMINI_API_KEY` to enable chart analysis
+	- `TRC20_WALLET_ADDRESS` to show the payment wallet
+	- `TELEGRAM_SUPPORT_URL` if you want to configure the support link through the API
 5. Redeploy after setting the variables, then check `https://your-project.vercel.app/api/health` for `{"ok":true}`.
+
+Vercel provides `NODE_ENV=production` for production deployments. `PORT` is only used for local hosting. The application currently does not read `SESSION_SECRET` or `PRIVATE_CHANNEL_URL`; they are not required environment variables.
 
 Do not commit `.env` or paste production credentials into source files. Vercel environment variables are the production equivalent of `.env`; keep a local `.env` only for local development.
 
 ## Important production notes
 - Put the app behind HTTPS.
-- Use a strong random `SESSION_SECRET`.
+- Session cookies use random opaque tokens stored hashed in PostgreSQL.
 - Rotate any credentials that were present in an older archive.
 - Put PostgreSQL behind a private network/firewall.
 - Use a reverse proxy and a distributed rate limiter (Redis) when running multiple instances.
