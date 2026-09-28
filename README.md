@@ -1,0 +1,48 @@
+# FXSUDAN Platform 2.0
+
+Secure rewrite of the original FXSUDAN static demo. The original visual design is preserved, while authentication, access control, payment review, and chart analysis are moved to a server.
+
+## What changed
+- No users/passwords/access flags in localStorage.
+- Passwords are hashed with Node's async scrypt.
+- Sessions are random opaque tokens stored hashed in PostgreSQL and sent in an HttpOnly/SameSite cookie.
+- Course/signals/chartbot access is decided by PostgreSQL entitlements on the server.
+- Payment submissions are stored server-side and do NOT unlock anything until an admin approves them.
+- Transaction hashes are unique at the database level.
+- Chart uploads are memory-only and are never written to public storage.
+- Chart analysis is server-side and can use Gemini when `GEMINI_API_KEY` is configured.
+- Admin endpoints are role-protected.
+- Security headers are enabled with Helmet.
+
+## Run locally
+1. Create a PostgreSQL database and run `schema.sql` against it.
+2. Copy `.env.example` to `.env` and replace the example values. `.env` is ignored by Git.
+3. Run `npm install` and `npm start` with Node.js 20 or newer.
+4. Open `http://localhost:3000`.
+
+The server checks the database and creates/updates the admin account from `ADMIN_USERNAME` and `ADMIN_PASSWORD` at startup.
+
+## Deploy to Vercel with Neon
+1. Create a Neon PostgreSQL project and copy its pooled connection string into Vercel as `DATABASE_URL`.
+2. Run `schema.sql` in the Neon SQL Editor before deploying.
+3. Import this Git repository into Vercel. The Express app is exported from `server.js`; frontend assets are in `public/` and served by Vercel's static asset CDN.
+4. Add these Vercel environment variables for Production:
+	- `NODE_ENV=production`
+	- `DATABASE_URL` from Neon
+	- `SESSION_SECRET` with a unique random value of at least 32 characters
+	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (password must be at least 10 characters)
+	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app`
+	- `TRC20_WALLET_ADDRESS` and `TELEGRAM_SUPPORT_URL` for payment/support details
+	- `GEMINI_API_KEY` and `PRIVATE_CHANNEL_URL` if those features are used
+5. Redeploy after setting the variables, then check `https://your-project.vercel.app/api/health` for `{"ok":true}`.
+
+Do not commit `.env` or paste production credentials into source files. Vercel environment variables are the production equivalent of `.env`; keep a local `.env` only for local development.
+
+## Important production notes
+- Put the app behind HTTPS.
+- Use a strong random `SESSION_SECRET`.
+- Rotate any credentials that were present in an older archive.
+- Put PostgreSQL behind a private network/firewall.
+- Use a reverse proxy and a distributed rate limiter (Redis) when running multiple instances.
+- Add automated TRON transaction verification before calling payments fully automated.
+- Review the legal/tax/payment requirements for selling trading education and signals in your target countries.

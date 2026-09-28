@@ -87,15 +87,15 @@
     </section>
 
     <section class="chartbot-section" id="chartbot" aria-labelledby="chartbotTitle">
-      <div class="section-heading"><div><p class="eyebrow">Chart analysis bot</p><h2 id="chartbotTitle">Your chart analysis workspace.</h2></div><p class="section-note">Upload a screenshot first. A subscription is required when you request an analysis.</p></div>
+      <div class="section-heading"><div><p class="eyebrow">Chart analysis bot</p><h2 id="chartbotTitle">Your chart analysis workspace.</h2></div><p class="section-note">Compare up to three screenshots in one analysis. An active subscription is required.</p></div>
       <div class="chartbot-panel">
         <div class="chartbot-offer">
           <div><p class="plan-tier">Standalone subscription offer</p><h3>Chart bot <span>30 USDT</span></h3><p class="muted">Subscription is saved to your signed-in account. Payment is reviewed manually.</p></div>
           <button class="outline-button" id="chartbotSubscribe" type="button" data-open-payment data-payment-product="chartbot">Subscribe <span aria-hidden="true">&#8594;</span></button>
         </div>
         <div class="bot-status" id="chartbotStatus" hidden><span class="status-dot"></span><span>Payment details submitted · awaiting manual review</span></div>
-        <label class="chart-upload" for="chartImage"><span class="upload-icon" aria-hidden="true">+</span><strong>Choose a chart screenshot</strong><small>PNG, JPG, or WEBP · up to 10 MB</small><input id="chartImage" type="file" accept="image/png,image/jpeg,image/webp"></label>
-        <div class="chart-preview" id="chartPreviewWrap" hidden><img id="chartPreview" alt="Selected chart screenshot preview"><button id="removeChart" class="outline-button" type="button">Remove image</button></div>
+        <label class="chart-upload" for="chartImages"><span class="upload-icon" aria-hidden="true">+</span><strong>Choose up to 3 chart screenshots</strong><small>PNG, JPG, or WEBP · 4 MB combined maximum</small><input id="chartImages" type="file" accept="image/png,image/jpeg,image/webp" multiple></label>
+        <div class="chart-preview" id="chartPreviewWrap" hidden><div class="chart-preview-list" id="chartPreviewList"></div><button id="removeCharts" class="outline-button" type="button">Remove all images</button></div>
         <button class="primary-button analyze-button" id="analyzeChart" type="button" disabled>Analyze chart <span aria-hidden="true">&#8594;</span></button>
         <p class="selection-message" id="analysisMessage" role="status">Upload a chart screenshot. You will be asked to subscribe before your first analysis.</p>
       </div>
@@ -131,11 +131,11 @@
       <form id="authForm" novalidate>
         <div class="field-group" id="fullNameGroup"><label for="fullName">Full name</label><input id="fullName" type="text" placeholder="Your name" autocomplete="name"></div>
         <div class="field-group"><label for="authUsername">Username</label><input id="authUsername" type="text" placeholder="Choose a username" autocomplete="username" required></div>
-        <div class="field-group"><label for="authPassword">Password</label><input id="authPassword" type="password" placeholder="At least 6 characters" autocomplete="new-password" required></div>
+        <div class="field-group"><label for="authPassword">Password</label><input id="authPassword" type="password" placeholder="At least 10 characters" autocomplete="new-password" required></div>
         <p class="form-message" id="authMessage" role="alert" aria-live="polite"></p>
         <button class="primary-button" id="authSubmit" type="submit">Create my account <span aria-hidden="true">&#8594;</span></button>
       </form>
-      <p class="tiny-note">Your account is stored locally in this demo. Do not use a real password here.</p>
+      <p class="tiny-note" id="passwordHint">Your account is securely stored on the server. Never reuse a password from another service.</p>
     </section>
   </div>
   <script src="script.js"></script>
