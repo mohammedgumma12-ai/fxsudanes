@@ -244,15 +244,14 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      generationConfig: { 
-        responseMimeType: "application/json", 
-        temperature: 0.1,
-        maxOutputTokens: 1000
-      }
-    });
-
+const model = genAI.getGenerativeModel({ 
+  model: "gemini-2.0-flash",
+  generationConfig: { 
+    responseMimeType: "application/json", 
+    temperature: 0.1,
+    maxOutputTokens: 1000
+  }
+});
     const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
   "marketBias": "bullish, bearish, range, or unclear",
