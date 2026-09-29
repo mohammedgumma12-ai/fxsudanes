@@ -15,8 +15,16 @@ const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
 const appSchema = process.env.DATABASE_SCHEMA || 'fxsudan';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, ssl: isProd ? { rejectUnauthorized: false } : undefined });
+
+// إعداد الاتصال بقاعدة البيانات
+const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL, 
+  max: 10, 
+  ssl: isProd ? { rejectUnauthorized: false } : undefined 
+});
+
 const quotedAppSchema = `"${appSchema.replaceAll('"', '""')}"`;
+
 pool.query = async (text, values) => {
   const client = await pool.connect();
   try {
@@ -32,7 +40,9 @@ const SESSION_DAYS = 30;
 const MAX_CHART_IMAGES = 3;
 const MAX_CHART_UPLOAD_BYTES = 4 * 1024 * 1024;
 const chartImageTypes = ['image/png', 'image/jpeg', 'image/webp'];
+
 const upload = multer({
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_CHART_UPLOAD_BYTES, files: MAX_CHART_IMAGES },
   fileFilter: (_req, file, cb) => {
     if (chartImageTypes.includes(file.mimetype)) return cb(null, true);
@@ -44,13 +54,31 @@ const upload = multer({
 
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' }, referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], scriptSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], fontSrc: ["'self'", 'https://fonts.gstatic.com'], imgSrc: ["'self'", 'data:', 'blob:', 'https://api.qrserver.com'], connectSrc: ["'self'"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'none'"] } } }));
+app.use(helmet({ 
+  crossOriginResourcePolicy: { policy: 'same-site' }, 
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }, 
+  contentSecurityPolicy: { 
+    directives: { 
+      defaultSrc: ["'self'"], 
+      scriptSrc: ["'self'"], 
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'], 
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://api.qrserver.com'], 
+      connectSrc: ["'self'"], 
+      objectSrc: ["'none'"], 
+      baseUri: ["'self'"], 
+      frameAncestors: ["'none'"] 
+    } 
+  } 
+}));
+
 app.use(express.json({ limit: '256kb' }));
 app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 app.use(cookieParser());
 
 const rateMap = new Map();
 let databaseInitialization;
+
 function rateLimit(key, max, windowMs) {
   const now = Date.now();
   const item = rateMap.get(key);
@@ -64,10 +92,12 @@ function fail(res, status, message) { return res.status(status).json({ ok: false
 function sha256(value) { return crypto.createHash('sha256').update(value).digest('hex'); }
 function newId() { return crypto.randomUUID(); }
 function token() { return crypto.randomBytes(32).toString('base64url'); }
+
 async function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
   const derived = await new Promise((resolve, reject) => crypto.scrypt(password, salt, 64, { N: 16384, r: 8, p: 1 }, (err, key) => err ? reject(err) : resolve(key)));
   return `${salt}:${Buffer.from(derived).toString('hex')}`;
 }
+
 async function verifyPassword(password, stored) {
   const [salt, expected] = String(stored).split(':');
   if (!salt || !expected) return false;
@@ -75,6 +105,7 @@ async function verifyPassword(password, stored) {
   const actual = Buffer.from(derived).toString('hex');
   return actual.length === expected.length && crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 }
+
 function validUsername(username) { return /^[a-z0-9_.-]{3,32}$/.test(username); }
 function validPassword(password) { return typeof password === 'string' && password.length >= 10 && password.length <= 128; }
 function cookieOptions(maxAge) { return { httpOnly: true, secure: isProd, sameSite: 'lax', path: '/', maxAge }; }
@@ -89,6 +120,7 @@ async function dbUser(userId) {
   const { rows } = await pool.query('SELECT id, name, username, role, created_at FROM users WHERE id=$1', [userId]);
   return rows[0] || null;
 }
+
 async function auth(req, res, next) {
   const raw = req.cookies.fxsudan_session;
   if (!raw) return fail(res, 401, 'Authentication required.');
@@ -98,6 +130,7 @@ async function auth(req, res, next) {
   if (!user) return fail(res, 401, 'User not found.');
   req.user = user; next();
 }
+
 function admin(req, res, next) { if (req.user?.role !== 'admin') return fail(res, 403, 'Admin access required.'); next(); }
 
 async function createSession(res, userId) {
@@ -122,8 +155,7 @@ async function ensureAdmin() {
 async function initializeDatabase() {
   databaseInitialization ??= (async () => {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(appSchema)) throw new Error('DATABASE_SCHEMA must be a valid PostgreSQL schema name.');
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${appSchema}"`);
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS ${quotedAppSchema}`);
     await pool.query('SELECT 1');
     await ensureAdmin();
   })();
@@ -133,6 +165,8 @@ async function initializeDatabase() {
 app.use('/api', async (_req, res, next) => {
   try { await initializeDatabase(); next(); } catch (error) { next(error); }
 });
+
+// --- API ROUTES ---
 
 app.get('/api/health', async (_req, res) => { try { await pool.query('SELECT 1'); res.json({ ok: true }); } catch { fail(res, 503, 'Database unavailable.'); } });
 app.get('/api/config', (_req, res) => res.json({ ok: true, paymentAddress: process.env.TRC20_WALLET_ADDRESS || '', telegramSupportUrl: process.env.TELEGRAM_SUPPORT_URL || '' }));
@@ -198,7 +232,6 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!charts.length) return fail(res, 400, 'Upload one to three PNG, JPG or WEBP chart images.');
     if (charts.reduce((total, chart) => total + chart.size, 0) > MAX_CHART_UPLOAD_BYTES) return fail(res, 413, 'The combined image size must be 4 MB or less.');
 
-    // تجاوز فحص الاشتراك للحسابات ذات صلاحية Admin
     if (req.user.role !== 'admin') {
       const entitlement = await pool.query(`SELECT 1 FROM entitlements WHERE user_id=$1 AND product='chartbot' AND (expires_at IS NULL OR expires_at > NOW())`, [req.user.id]);
       if (!entitlement.rows[0]) return fail(res, 403, 'An active Chart Bot subscription is required.');
@@ -210,30 +243,32 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
-    // التهيئة الرسمية بمكتبة Google المعالجة لطلبات Vercel
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ 
       model: "gemini-1.5-flash",
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
+      generationConfig: { 
+        responseMimeType: "application/json", 
+        temperature: 0.1,
+        maxOutputTokens: 1000
+      }
     });
 
-    const prompt = `You are a careful trading education assistant. Analyze all supplied chart screenshots together, using Smart Money Concepts (SMC), price action, and support/resistance. Treat each image as a separate view first; compare timeframes only when labels make them readable. Do not assume the images show the same instrument or timeframe if that is unclear. Distinguish visible evidence from interpretation. Never invent or estimate exact prices, timeframe labels, or chart details: use null when unreadable. Return ONLY valid JSON with this shape:
+    const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
-  "marketBias": "bullish, bearish, range, or unclear with a brief reason",
-  "timeframes": "readable timeframe labels or null",
-  "imageRead": [{"image": 1, "timeframe": null, "evidence": "visible facts"}],
-  "structure": "trend, swing structure, BOS/CHOCH evidence or uncertainty",
-  "liquidity": "visible equal highs/lows, likely pools, sweeps, or uncertainty",
-  "orderBlocks": "potential bullish/bearish order blocks and evidence, or none/unclear",
-  "fairValueGaps": "visible imbalances/FVGs and evidence, or none/unclear",
-  "supportResistance": "visible support/resistance zones; exact prices only when legible",
-  "priceAction": "relevant candle behavior and confirmation needed",
-  "entryScenarios": [{"direction": "long or short", "entryZone": null, "confirmation": "what must happen first", "stopLoss": null, "target1": null, "target2": null, "invalidation": "what disproves this setup", "riskReward": null}],
-  "noTradeCondition": "conditions where there is no valid setup",
-  "confidence": "low, medium, or high with a reason",
-  "notes": "uncertainties and educational disclaimer"
-}
-Provide zero to two entryScenarios. Use null for every unreadable or unsupported price. Entries are conditional scenarios, never guaranteed calls. Do not promise profit or present this as financial advice.`;
+  "marketBias": "bullish, bearish, range, or unclear",
+  "timeframes": "readable timeframe or null",
+  "imageRead": [{"image": 1, "timeframe": null, "evidence": "summary"}],
+  "structure": "BOS/CHOCH status",
+  "liquidity": "pools/sweeps",
+  "orderBlocks": "key zones",
+  "fairValueGaps": "FVGs info",
+  "supportResistance": "zones",
+  "priceAction": "candles action",
+  "entryScenarios": [{"direction": "long or short", "entryZone": null, "confirmation": "details", "stopLoss": null, "target1": null, "target2": null, "invalidation": "reason", "riskReward": null}],
+  "noTradeCondition": "condition",
+  "confidence": "low, medium, or high",
+  "notes": "disclaimer"
+}`;
 
     const imageParts = charts.map(chart => ({
       inlineData: {
@@ -247,22 +282,23 @@ Provide zero to two entryScenarios. Use null for every unreadable or unsupported
     const text = response.text();
 
     const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-    
     let analysisResult; 
     try { 
       analysisResult = JSON.parse(cleaned); 
     } catch { 
-      return fail(res, 502, 'Analysis response was not valid JSON.'); 
+      return fail(res, 502, 'Invalid response format from AI provider.'); 
     }
 
     await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(analysisResult)]);
     res.json({ ok: true, result: analysisResult });
 
   } catch (error) {
-    console.error("Gemini API Error Detail:", error);
+    console.error("Gemini Execution Error:", error);
     return fail(res, 502, `Analysis failed: ${error.message || 'Provider Error'}`);
   }
 });
+
+// --- ADMIN ROUTES ---
 
 app.get('/api/admin/payments', auth, admin, async (_req, res) => {
   const { rows } = await pool.query(`SELECT p.id,p.product,p.amount,p.network,p.tx_hash,p.status,p.created_at,p.reviewed_at,u.username,u.name FROM payments p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100`);
@@ -317,14 +353,17 @@ app.delete('/api/admin/users/:id/entitlements/:product', auth, admin, async (req
 });
 
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
+
 app.use((err, _req, res, _next) => {
-  if (err instanceof multer.MulterError || err.code === 'INVALID_IMAGE_TYPE') return fail(res, 400, 'Upload up to three PNG, JPG or WEBP images with a combined size of 4 MB or less.');
-  console.error(err); if (!res.headersSent) fail(res, 500, 'Internal server error.');
+  if (err instanceof multer.MulterError || err.code === 'INVALID_IMAGE_TYPE') return fail(res, 400, 'Upload up to three PNG, JPG or WEBP images.');
+  console.error(err); 
+  if (!res.headersSent) fail(res, 500, 'Internal server error.');
 });
 
 async function boot() {
   await initializeDatabase();
   app.listen(port, () => console.log(`FXSUDAN running on http://localhost:${port}`));
 }
+
 export default app;
 if (process.env.VERCEL !== '1') boot().catch(error => { console.error(error); process.exit(1); });
