@@ -13,7 +13,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, ssl: isProd ? { rejectUnauthorized: false } : undefined });
+const databaseUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
+if (databaseUrl && process.env.DATABASE_NAME) databaseUrl.pathname = `/${encodeURIComponent(process.env.DATABASE_NAME)}`;
+const pool = new Pool({ connectionString: databaseUrl?.toString(), max: 10, ssl: isProd ? { rejectUnauthorized: false } : undefined });
 
 const PRODUCTS = Object.freeze({ course: 89, signals: 75, chartbot: 30 });
 const SESSION_DAYS = 30;

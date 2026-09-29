@@ -28,6 +28,8 @@ The server checks the database and creates/updates the admin account from `ADMIN
 3. Import this Git repository into Vercel. The Express app is exported from `server.js`; frontend assets are in `public/` and served by Vercel's static asset CDN.
 4. Add these Vercel environment variables for Production:
 	- `DATABASE_URL` from Neon (required)
+	- `DATABASE_URL` from Neon (required)
+	- `DATABASE_NAME=fxsudan_app` to use the isolated FXSUDAN database while keeping the provided Neon URL credentials (optional; overrides the database name in the URL)
 	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (required; password must be at least 10 characters)
 	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app` (recommended for origin checks)
 	- `GEMINI_API_KEY` to enable chart analysis
