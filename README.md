@@ -37,6 +37,7 @@ The server checks the database and creates/updates the admin account from `ADMIN
 5. Redeploy after setting the variables, then check `https://your-project.vercel.app/api/health` for `{"ok":true}`.
 
 Any change to Production environment variables requires a new deployment before it takes effect. With Neon's pooled connection string, keep the database in `DATABASE_URL` and select this app's isolated schema with `DATABASE_SCHEMA=fxsudan`; do not use `DATABASE_NAME` to switch databases on the pooler.
+For Gemini, use a valid Google AI Studio API key with access to `gemini-2.5-flash`. After changing `GEMINI_API_KEY`, redeploy before testing chart uploads.
 
 To make an account the initial admin, set `ADMIN_USERNAME` to that account's username and set `ADMIN_PASSWORD` to the password it should use. After redeploying, request `/api/health` once; the server bootstraps or promotes that account. Then sign in with those credentials and open `/admin.html` to manage user access.
 
