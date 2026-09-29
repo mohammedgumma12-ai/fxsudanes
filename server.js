@@ -244,12 +244,6 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      generationConfig: { 
-        responseMimeType: "application/json" 
-      }
-    });
 
     const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
@@ -275,7 +269,24 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
       }
     }));
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    // المحاولة الأولى باستخدام gemini-2.5-flash
+    let result;
+    try {
+      const model = genAI.getGenerativeModel({ 
+        model: "gemini-2.5-flash",
+        generationConfig: { responseMimeType: "application/json" }
+      });
+      result = await model.generateContent([prompt, ...imageParts]);
+    } catch (primaryErr) {
+      console.warn("gemini-2.5-flash failed, trying fallback model gemini-1.5-flash:", primaryErr.message);
+      // محاولة احتياطية باستعمال gemini-1.5-flash
+      const fallbackModel = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        generationConfig: { responseMimeType: "application/json" }
+      });
+      result = await fallbackModel.generateContent([prompt, ...imageParts]);
+    }
+
     const response = await result.response;
     const text = response.text();
 
