@@ -244,9 +244,14 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      generationConfig: { 
+        responseMimeType: "application/json" 
+      }
+    });
 
-    const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond ONLY in a raw valid JSON object (no markdown, no backticks, no wrapping text) with this exact structure:
+    const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
   "marketBias": "bullish, bearish, range, or unclear",
   "timeframes": "readable timeframe or null",
@@ -274,12 +279,12 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     const response = await result.response;
     const text = response.text();
 
-    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
     let analysisResult; 
     try { 
       analysisResult = JSON.parse(cleaned); 
     } catch (parseErr) { 
-      return fail(res, 400, `AI returned text, but invalid JSON format: ${text.slice(0, 100)}`); 
+      return fail(res, 400, `AI returned invalid JSON format: ${text.slice(0, 100)}`); 
     }
 
     await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(analysisResult)]);
