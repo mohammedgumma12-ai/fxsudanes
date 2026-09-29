@@ -7,6 +7,7 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -197,7 +198,7 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!charts.length) return fail(res, 400, 'Upload one to three PNG, JPG or WEBP chart images.');
     if (charts.reduce((total, chart) => total + chart.size, 0) > MAX_CHART_UPLOAD_BYTES) return fail(res, 413, 'The combined image size must be 4 MB or less.');
 
-    // السماح بالتحليل تلقائياً بحال كان الحساب حساب أدمن
+    // تجاوز فحص الاشتراك للحسابات ذات صلاحية Admin
     if (req.user.role !== 'admin') {
       const entitlement = await pool.query(`SELECT 1 FROM entitlements WHERE user_id=$1 AND product='chartbot' AND (expires_at IS NULL OR expires_at > NOW())`, [req.user.id]);
       if (!entitlement.rows[0]) return fail(res, 403, 'An active Chart Bot subscription is required.');
@@ -206,7 +207,15 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
       if (count.rows[0].count >= 20) return fail(res, 429, 'Daily analysis limit reached. Try again tomorrow.');
     }
 
-    if (!process.env.GEMINI_API_KEY) return fail(res, 503, 'Chart analysis service is not configured yet.');
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
+
+    // التهيئة الرسمية بمكتبة Google المعالجة لطلبات Vercel
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      generationConfig: { responseMimeType: "application/json", temperature: 0.2 }
+    });
 
     const prompt = `You are a careful trading education assistant. Analyze all supplied chart screenshots together, using Smart Money Concepts (SMC), price action, and support/resistance. Treat each image as a separate view first; compare timeframes only when labels make them readable. Do not assume the images show the same instrument or timeframe if that is unclear. Distinguish visible evidence from interpretation. Never invent or estimate exact prices, timeframe labels, or chart details: use null when unreadable. Return ONLY valid JSON with this shape:
 {
@@ -226,43 +235,32 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
 }
 Provide zero to two entryScenarios. Use null for every unreadable or unsupported price. Entries are conditional scenarios, never guaranteed calls. Do not promise profit or present this as financial advice.`;
 
-    const parts = [
-      { text: prompt },
-      ...charts.map(chart => ({ inline_data: { mime_type: chart.mimetype, data: chart.buffer.toString('base64') } }))
-    ];
+    const imageParts = charts.map(chart => ({
+      inlineData: {
+        data: chart.buffer.toString('base64'),
+        mimeType: chart.mimetype
+      }
+    }));
 
-    const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const response = await result.response;
+    const text = response.text();
 
-    // استخدام النموذج المعتمد المخصص للصور والشارتات gemini-1.5-flash
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Gemini API Error Response:", errText);
-      return fail(res, 502, `Analysis provider error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
     const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-
-    let result;
-    try {
-      result = JSON.parse(cleaned);
-    } catch {
-      return fail(res, 502, 'Analysis response was not valid JSON.');
+    
+    let analysisResult; 
+    try { 
+      analysisResult = JSON.parse(cleaned); 
+    } catch { 
+      return fail(res, 502, 'Analysis response was not valid JSON.'); 
     }
 
-    await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(result)]);
-    res.json({ ok: true, result });
+    await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(analysisResult)]);
+    res.json({ ok: true, result: analysisResult });
 
   } catch (error) {
-    console.error("Unhandled Error in Chart Analysis:", error);
-    return fail(res, 500, error.message || "Internal server error during analysis.");
+    console.error("Gemini API Error Detail:", error);
+    return fail(res, 502, `Analysis failed: ${error.message || 'Provider Error'}`);
   }
 });
 
