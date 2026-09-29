@@ -24,12 +24,11 @@ The server checks the database and creates/updates the admin account from `ADMIN
 
 ## Deploy to Vercel with Neon
 1. Create a Neon PostgreSQL project and copy its pooled connection string into Vercel as `DATABASE_URL`.
-2. Run `schema.sql` in the Neon SQL Editor before deploying.
+2. Run `schema.sql` in the Neon SQL Editor before deploying; it creates the isolated `fxsudan` schema and its tables.
 3. Import this Git repository into Vercel. The Express app is exported from `server.js`; frontend assets are in `public/` and served by Vercel's static asset CDN.
 4. Add these Vercel environment variables for Production:
 	- `DATABASE_URL` from Neon (required)
-	- `DATABASE_URL` from Neon (required)
-	- `DATABASE_NAME=fxsudan_app` to use the isolated FXSUDAN database while keeping the provided Neon URL credentials (optional; overrides the database name in the URL)
+	- `DATABASE_SCHEMA=fxsudan` to isolate this app's tables from other apps in the same Neon database (recommended)
 	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (required; password must be at least 10 characters)
 	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app` (recommended for origin checks)
 	- `GEMINI_API_KEY` to enable chart analysis

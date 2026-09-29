@@ -13,9 +13,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const isProd = process.env.NODE_ENV === 'production';
-const databaseUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
-if (databaseUrl && process.env.DATABASE_NAME) databaseUrl.pathname = `/${encodeURIComponent(process.env.DATABASE_NAME)}`;
-const pool = new Pool({ connectionString: databaseUrl?.toString(), max: 10, ssl: isProd ? { rejectUnauthorized: false } : undefined });
+const appSchema = process.env.DATABASE_SCHEMA || 'fxsudan';
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 10, ssl: isProd ? { rejectUnauthorized: false } : undefined });
+const quotedAppSchema = `"${appSchema.replaceAll('"', '""')}"`;
+pool.query = async (text, values) => {
+  const client = await pool.connect();
+  try {
+    await client.query(`SET search_path TO ${quotedAppSchema}, public`);
+    return await client.query(text, values);
+  } finally {
+    client.release();
+  }
+};
 
 const PRODUCTS = Object.freeze({ course: 89, signals: 75, chartbot: 30 });
 const SESSION_DAYS = 30;
@@ -112,6 +121,8 @@ async function ensureAdmin() {
 async function initializeDatabase() {
   databaseInitialization ??= (async () => {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(appSchema)) throw new Error('DATABASE_SCHEMA must be a valid PostgreSQL schema name.');
+    await pool.query(`CREATE SCHEMA IF NOT EXISTS "${appSchema}"`);
     await pool.query('SELECT 1');
     await ensureAdmin();
   })();
@@ -232,6 +243,7 @@ app.post('/api/admin/payments/:id/review', auth, admin, async (req, res) => {
   if (!['approved','rejected'].includes(status)) return fail(res, 400, 'Invalid review status.');
   const client = await pool.connect();
   try {
+    await client.query(`SET search_path TO ${quotedAppSchema}, public`);
     await client.query('BEGIN');
     const payment = await client.query('SELECT * FROM payments WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!payment.rows[0]) { await client.query('ROLLBACK'); return fail(res, 404, 'Payment not found.'); }

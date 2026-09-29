@@ -1,3 +1,6 @@
+CREATE SCHEMA IF NOT EXISTS fxsudan;
+SET search_path TO fxsudan;
+
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL,
