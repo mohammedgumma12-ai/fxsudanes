@@ -28,13 +28,15 @@ The server checks the database and creates/updates the admin account from `ADMIN
 3. Import this Git repository into Vercel. The Express app is exported from `server.js`; frontend assets are in `public/` and served by Vercel's static asset CDN.
 4. Add these Vercel environment variables for Production:
 	- `DATABASE_URL` from Neon (required)
-	- `DATABASE_SCHEMA=fxsudan` to isolate this app's tables from other apps in the same Neon database (recommended)
+	- `DATABASE_SCHEMA=fxsudan` to isolate this app's tables from other apps in the same Neon database (required when sharing a Neon database)
 	- `ADMIN_USERNAME` and `ADMIN_PASSWORD` (required; password must be at least 10 characters)
 	- `PUBLIC_BASE_URL` set to the exact deployed origin, such as `https://your-project.vercel.app` (recommended for origin checks)
 	- `GEMINI_API_KEY` to enable chart analysis
 	- `TRC20_WALLET_ADDRESS` to show the payment wallet
 	- `TELEGRAM_SUPPORT_URL` if you want to configure the support link through the API
 5. Redeploy after setting the variables, then check `https://your-project.vercel.app/api/health` for `{"ok":true}`.
+
+Any change to Production environment variables requires a new deployment before it takes effect. With Neon's pooled connection string, keep the database in `DATABASE_URL` and select this app's isolated schema with `DATABASE_SCHEMA=fxsudan`; do not use `DATABASE_NAME` to switch databases on the pooler.
 
 To make an account the initial admin, set `ADMIN_USERNAME` to that account's username and set `ADMIN_PASSWORD` to the password it should use. After redeploying, request `/api/health` once; the server bootstraps or promotes that account. Then sign in with those credentials and open `/admin.html` to manage user access.
 
