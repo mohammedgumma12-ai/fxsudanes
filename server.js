@@ -244,7 +244,7 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond ONLY in a raw valid JSON object (no markdown, no backticks, no wrapping text) with this exact structure:
 {
