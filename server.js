@@ -252,6 +252,25 @@ app.get('/api/admin/users', auth, admin, async (_req, res) => {
   res.json({ ok: true, users: rows });
 });
 
+app.post('/api/admin/users/:id/entitlements', auth, admin, async (req, res) => {
+  const product = String(req.body.product || '');
+  const duration = req.body.duration === 'lifetime' ? null : Number(req.body.duration);
+  if (!['course', 'signals', 'chartbot'].includes(product)) return fail(res, 400, 'Invalid product.');
+  if (duration !== null && (!Number.isInteger(duration) || duration < 1 || duration > 3650)) return fail(res, 400, 'Duration must be lifetime or between 1 and 3650 days.');
+  const user = await pool.query('SELECT id FROM users WHERE id=$1', [req.params.id]);
+  if (!user.rows[0]) return fail(res, 404, 'User not found.');
+  const entitlement = await pool.query(`INSERT INTO entitlements (id,user_id,product,starts_at,expires_at) VALUES ($1,$2,$3,NOW(),CASE WHEN $4::int IS NULL THEN NULL ELSE NOW()+($4 * INTERVAL '1 day') END) ON CONFLICT (user_id,product) DO UPDATE SET starts_at=NOW(),expires_at=EXCLUDED.expires_at RETURNING product,expires_at`, [newId(), req.params.id, product, duration]);
+  res.json({ ok: true, entitlement: entitlement.rows[0] });
+});
+
+app.delete('/api/admin/users/:id/entitlements/:product', auth, admin, async (req, res) => {
+  const product = String(req.params.product || '');
+  if (!['course', 'signals', 'chartbot'].includes(product)) return fail(res, 400, 'Invalid product.');
+  const result = await pool.query('DELETE FROM entitlements WHERE user_id=$1 AND product=$2 RETURNING id', [req.params.id, product]);
+  if (!result.rowCount) return fail(res, 404, 'Active entitlement not found.');
+  res.json({ ok: true });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'] }));
 app.use((err, _req, res, _next) => {
   if (err instanceof multer.MulterError || err.code === 'INVALID_IMAGE_TYPE') return fail(res, 400, 'Upload up to three PNG, JPG or WEBP images with a combined size of 4 MB or less.');

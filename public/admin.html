@@ -1,5 +1,94 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>fxsudan | Admin</title><link rel="stylesheet" href="style.css"></head><body class="dashboard-page"><header class="topbar"><a class="brand" href="index.html">fx<span>sudan</span></a><button class="logout-button" id="logout">Log out</button></header><main class="dashboard-shell"><section class="welcome-block"><div><p class="eyebrow">Operations</p><h1>Payment <span>review.</span></h1><p class="muted">Approve only after independently verifying the transaction on the correct TRON network and wallet.</p></div></section><section class="dashboard-card" style="margin-top:2rem"><div id="payments">Loading…</div></section></main><script>
-const esc=s=>String(s??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-async function load(){const r=await fetch('/api/admin/payments');if(r.status===401||r.status===403){location.href='index.html';return}const d=await r.json();const box=document.querySelector('#payments');box.innerHTML=d.payments.map(p=>`<article style="padding:1rem 0;border-bottom:1px solid var(--line)"><strong>${esc(p.username)}</strong> · ${esc(p.product)} · ${esc(p.amount)} USDT<br><small>${esc(p.tx_hash)}</small><br><span>${esc(p.status)}</span> ${p.status==='pending'?`<button class="outline-button" data-id="${p.id}" data-status="approved">Approve</button> <button class="outline-button" data-id="${p.id}" data-status="rejected">Reject</button>`:''}</article>`).join('')||'No payments.';document.querySelectorAll('[data-id]').forEach(b=>b.onclick=async()=>{await fetch('/api/admin/payments/'+b.dataset.id+'/review',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({status:b.dataset.status})});load();});}
-load();document.querySelector('#logout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST'});location.href='index.html'};
-</script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<title>fxsudan | Admin</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-page">
+	<header class="topbar">
+		<a class="brand" href="index.html">fx<span>sudan</span></a>
+		<button class="logout-button" id="logout" type="button">Log out</button>
+	</header>
+	<main class="dashboard-shell">
+		<section class="welcome-block">
+			<div>
+				<p class="eyebrow">Operations</p>
+				<h1>Access <span>management.</span></h1>
+				<p class="muted">Manage product access and verify submitted payments.</p>
+			</div>
+		</section>
+		<p id="adminMessage" class="selection-message" role="status" aria-live="polite"></p>
+		<section class="dashboard-card" style="margin-top:1.5rem">
+			<h2>Users and subscriptions</h2>
+			<div id="users">Loading users…</div>
+		</section>
+		<section class="dashboard-card" style="margin-top:1.5rem">
+			<h2>Payment review</h2>
+			<p class="muted">Approve only after independently verifying the transaction on the correct TRON network and wallet.</p>
+			<div id="payments">Loading payments…</div>
+		</section>
+	</main>
+	<script>
+		const esc = value => String(value ?? '').replace(/[&<>']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;' }[char]));
+		const message = document.querySelector('#adminMessage');
+		async function api(url, options = {}) {
+			const response = await fetch(url, { credentials: 'same-origin', ...options, headers: { ...(options.body ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) } });
+			const data = await response.json().catch(() => ({}));
+			if (response.status === 401 || response.status === 403) { location.href = 'index.html'; throw new Error('Admin access required.'); }
+			if (!response.ok) throw new Error(data.error || 'Request failed.');
+			return data;
+		}
+		function setMessage(text, isError = false) {
+			message.textContent = text;
+			message.dataset.error = String(isError);
+		}
+		function isActive(entitlement) {
+			return !entitlement.expires_at || new Date(entitlement.expires_at) > new Date();
+		}
+		async function loadUsers() {
+			const { users } = await api('/api/admin/users');
+			const box = document.querySelector('#users');
+			box.innerHTML = users.map(user => {
+				const entitlements = user.entitlements.map(item => `<li>${esc(item.product)} · ${isActive(item) ? (item.expires_at ? `until ${esc(new Date(item.expires_at).toLocaleDateString())}` : 'lifetime') : 'expired'} <button class="outline-button" type="button" data-revoke-user="${esc(user.id)}" data-revoke-product="${esc(item.product)}">Revoke</button></li>`).join('') || '<li>No subscriptions</li>';
+				return `<article style="padding:1rem 0;border-bottom:1px solid var(--line)"><strong>${esc(user.name)}</strong> · @${esc(user.username)} · ${esc(user.role)}<ul>${entitlements}</ul><label>Product <select data-product-for="${esc(user.id)}"><option value="course">Course</option><option value="signals">Signals</option><option value="chartbot">Chart Bot</option></select></label> <label>Duration <select data-duration-for="${esc(user.id)}"><option value="30">30 days</option><option value="90">90 days</option><option value="lifetime">Lifetime</option></select></label> <button class="outline-button" type="button" data-grant-user="${esc(user.id)}">Grant access</button></article>`;
+			}).join('') || 'No users.';
+			box.querySelectorAll('[data-grant-user]').forEach(button => button.addEventListener('click', async () => {
+				const userId = button.dataset.grantUser;
+				const product = box.querySelector(`[data-product-for="${CSS.escape(userId)}"]`).value;
+				const duration = box.querySelector(`[data-duration-for="${CSS.escape(userId)}"]`).value;
+				try {
+					await api(`/api/admin/users/${encodeURIComponent(userId)}/entitlements`, { method: 'POST', body: JSON.stringify({ product, duration }) });
+					setMessage(`Granted ${product} access to ${button.closest('article').querySelector('strong').textContent}.`);
+					await loadUsers();
+				} catch (error) { setMessage(error.message, true); }
+			}));
+			box.querySelectorAll('[data-revoke-user]').forEach(button => button.addEventListener('click', async () => {
+				try {
+					await api(`/api/admin/users/${encodeURIComponent(button.dataset.revokeUser)}/entitlements/${encodeURIComponent(button.dataset.revokeProduct)}`, { method: 'DELETE' });
+					setMessage(`Revoked ${button.dataset.revokeProduct} access.`);
+					await loadUsers();
+				} catch (error) { setMessage(error.message, true); }
+			}));
+		}
+		async function loadPayments() {
+			const { payments } = await api('/api/admin/payments');
+			const box = document.querySelector('#payments');
+			box.innerHTML = payments.map(payment => `<article style="padding:1rem 0;border-bottom:1px solid var(--line)"><strong>${esc(payment.username)}</strong> · ${esc(payment.product)} · ${esc(payment.amount)} USDT<br><small>${esc(payment.tx_hash)}</small><br><span>${esc(payment.status)}</span> ${payment.status === 'pending' ? `<button class="outline-button" type="button" data-payment-id="${esc(payment.id)}" data-payment-status="approved">Approve</button> <button class="outline-button" type="button" data-payment-id="${esc(payment.id)}" data-payment-status="rejected">Reject</button>` : ''}</article>`).join('') || 'No payments.';
+			box.querySelectorAll('[data-payment-id]').forEach(button => button.addEventListener('click', async () => {
+				try {
+					await api(`/api/admin/payments/${encodeURIComponent(button.dataset.paymentId)}/review`, { method: 'POST', body: JSON.stringify({ status: button.dataset.paymentStatus }) });
+					setMessage(`Payment ${button.dataset.paymentStatus}.`);
+					await Promise.all([loadPayments(), loadUsers()]);
+				} catch (error) { setMessage(error.message, true); }
+			}));
+		}
+		Promise.all([loadUsers(), loadPayments()]).catch(error => setMessage(error.message, true));
+		document.querySelector('#logout').addEventListener('click', async () => {
+			await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+			location.href = 'index.html';
+		});
+	</script>
+</body>
+</html>

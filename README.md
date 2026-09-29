@@ -11,7 +11,7 @@ Secure rewrite of the original FXSUDAN static demo. The original visual design i
 - Transaction hashes are unique at the database level.
 - Chart uploads are memory-only and are never written to public storage.
 - Chart analysis is server-side and can use Gemini when `GEMINI_API_KEY` is configured.
-- Admin endpoints are role-protected.
+- Admin endpoints are role-protected; admins can grant or revoke course, signals, and chartbot access for 30 days, 90 days, or permanently.
 - Security headers are enabled with Helmet.
 
 ## Run locally
@@ -34,6 +34,8 @@ The server checks the database and creates/updates the admin account from `ADMIN
 	- `TRC20_WALLET_ADDRESS` to show the payment wallet
 	- `TELEGRAM_SUPPORT_URL` if you want to configure the support link through the API
 5. Redeploy after setting the variables, then check `https://your-project.vercel.app/api/health` for `{"ok":true}`.
+
+To make an account the initial admin, set `ADMIN_USERNAME` to that account's username and set `ADMIN_PASSWORD` to the password it should use. After redeploying, request `/api/health` once; the server bootstraps or promotes that account. Then sign in with those credentials and open `/admin.html` to manage user access.
 
 Vercel provides `NODE_ENV=production` for production deployments. `PORT` is only used for local hosting. The application currently does not read `SESSION_SECRET` or `PRIVATE_CHANNEL_URL`; they are not required environment variables.
 
