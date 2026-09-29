@@ -7,7 +7,7 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,9 +61,9 @@ app.use(helmet({
     directives: { 
       defaultSrc: ["'self'"], 
       scriptSrc: ["'self'"], 
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'], 
-      imgSrc: ["'self'", 'data:', 'blob:', 'https://api.qrserver.com'], 
+      styleSrc: ["'self'", "'unsafe-inline'", '[https://fonts.googleapis.com](https://fonts.googleapis.com)'], 
+      fontSrc: ["'self'", '[https://fonts.gstatic.com](https://fonts.gstatic.com)'], 
+      imgSrc: ["'self'", 'data:', 'blob:', '[https://api.qrserver.com](https://api.qrserver.com)'], 
       connectSrc: ["'self'"], 
       objectSrc: ["'none'"], 
       baseUri: ["'self'"], 
@@ -244,14 +244,16 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-const model = genAI.getGenerativeModel({ 
-  model: "gemini-2.0-flash",
-  generationConfig: { 
-    responseMimeType: "application/json", 
-    temperature: 0.1,
-    maxOutputTokens: 1000
-  }
-});
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-1.5-flash",
+      safetySettings: [
+        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
+      ]
+    });
+
     const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
   "marketBias": "bullish, bearish, range, or unclear",
@@ -280,7 +282,7 @@ const model = genAI.getGenerativeModel({
     const response = await result.response;
     const text = response.text();
 
-    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const cleaned = text.replace(/```json/gi, '').replace(/```/g, '').trim();
     let analysisResult; 
     try { 
       analysisResult = JSON.parse(cleaned); 
