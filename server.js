@@ -109,10 +109,11 @@ async function verifyPassword(password, stored) {
 function validUsername(username) { return /^[a-z0-9_.-]{3,32}$/.test(username); }
 function validPassword(password) { return typeof password === 'string' && password.length >= 10 && password.length <= 128; }
 function cookieOptions(maxAge) { return { httpOnly: true, secure: isProd, sameSite: 'lax', path: '/', maxAge }; }
+
 function sameOrigin(req) {
   if (!isProd) return true;
   const origin = req.get('origin');
-  const base = process.process.env.PUBLIC_BASE_URL;
+  const base = process.env.PUBLIC_BASE_URL;
   return !origin || !base || origin === base;
 }
 
@@ -245,6 +246,11 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
+    const model = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      generationConfig: { responseMimeType: "application/json" }
+    });
+
     const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
 {
   "marketBias": "bullish, bearish, range, or unclear",
@@ -269,36 +275,7 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
       }
     }));
 
-    // قائمة نماذج متتالية لتفادي أخطاء 404 بناءً على صلاحيات مفتاح الـ API
-    const candidateModels = [
-      "gemini-2.5-flash",
-      "gemini-1.5-flash-latest",
-      "gemini-1.5-flash",
-      "gemini-1.5-pro",
-      "gemini-pro-vision"
-    ];
-
-    let result = null;
-    let lastError = null;
-
-    for (const modelName of candidateModels) {
-      try {
-        const model = genAI.getGenerativeModel({ 
-          model: modelName,
-          generationConfig: { responseMimeType: "application/json" }
-        });
-        result = await model.generateContent([prompt, ...imageParts]);
-        if (result) break; // نجاح الطلب
-      } catch (err) {
-        console.warn(`Attempt with model '${modelName}' failed: ${err.message}`);
-        lastError = err;
-      }
-    }
-
-    if (!result) {
-      throw lastError || new Error("All candidate Gemini models failed to generate content.");
-    }
-
+    const result = await model.generateContent([prompt, ...imageParts]);
     const response = await result.response;
     const text = response.text();
 
