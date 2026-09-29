@@ -192,16 +192,23 @@ app.get('/api/payments/mine', auth, async (req, res) => {
 });
 
 app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), async (req, res) => {
-  const charts = req.files || [];
-  if (!charts.length) return fail(res, 400, 'Upload one to three PNG, JPG or WEBP chart images.');
-  if (charts.reduce((total, chart) => total + chart.size, 0) > MAX_CHART_UPLOAD_BYTES) return fail(res, 413, 'The combined image size must be 4 MB or less.');
-  const entitlement = await pool.query(`SELECT 1 FROM entitlements WHERE user_id=$1 AND product='chartbot' AND (expires_at IS NULL OR expires_at > NOW())`, [req.user.id]);
-  if (!entitlement.rows[0]) return fail(res, 403, 'An active Chart Bot subscription is required.');
-  const count = await pool.query(`SELECT COUNT(*)::int AS count FROM analyses WHERE user_id=$1 AND created_at > NOW()-INTERVAL '24 hours'`, [req.user.id]);
-  if (count.rows[0].count >= 20) return fail(res, 429, 'Daily analysis limit reached. Try again tomorrow.');
-  if (!process.env.GEMINI_API_KEY) return fail(res, 503, 'Chart analysis service is not configured yet.');
+  try {
+    const charts = req.files || [];
+    if (!charts.length) return fail(res, 400, 'Upload one to three PNG, JPG or WEBP chart images.');
+    if (charts.reduce((total, chart) => total + chart.size, 0) > MAX_CHART_UPLOAD_BYTES) return fail(res, 413, 'The combined image size must be 4 MB or less.');
 
-  const prompt = `You are a careful trading education assistant. Analyze all supplied chart screenshots together, using Smart Money Concepts (SMC), price action, and support/resistance. Treat each image as a separate view first; compare timeframes only when labels make them readable. Do not assume the images show the same instrument or timeframe if that is unclear. Distinguish visible evidence from interpretation. Never invent or estimate exact prices, timeframe labels, or chart details: use null when unreadable. Return ONLY valid JSON with this shape:
+    // السماح بالتحليل تلقائياً بحال كان الحساب حساب أدمن
+    if (req.user.role !== 'admin') {
+      const entitlement = await pool.query(`SELECT 1 FROM entitlements WHERE user_id=$1 AND product='chartbot' AND (expires_at IS NULL OR expires_at > NOW())`, [req.user.id]);
+      if (!entitlement.rows[0]) return fail(res, 403, 'An active Chart Bot subscription is required.');
+
+      const count = await pool.query(`SELECT COUNT(*)::int AS count FROM analyses WHERE user_id=$1 AND created_at > NOW()-INTERVAL '24 hours'`, [req.user.id]);
+      if (count.rows[0].count >= 20) return fail(res, 429, 'Daily analysis limit reached. Try again tomorrow.');
+    }
+
+    if (!process.env.GEMINI_API_KEY) return fail(res, 503, 'Chart analysis service is not configured yet.');
+
+    const prompt = `You are a careful trading education assistant. Analyze all supplied chart screenshots together, using Smart Money Concepts (SMC), price action, and support/resistance. Treat each image as a separate view first; compare timeframes only when labels make them readable. Do not assume the images show the same instrument or timeframe if that is unclear. Distinguish visible evidence from interpretation. Never invent or estimate exact prices, timeframe labels, or chart details: use null when unreadable. Return ONLY valid JSON with this shape:
 {
   "marketBias": "bullish, bearish, range, or unclear with a brief reason",
   "timeframes": "readable timeframe labels or null",
@@ -218,19 +225,45 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
   "notes": "uncertainties and educational disclaimer"
 }
 Provide zero to two entryScenarios. Use null for every unreadable or unsupported price. Entries are conditional scenarios, never guaranteed calls. Do not promise profit or present this as financial advice.`;
-  const parts = [
-    { text: prompt },
-    ...charts.map(chart => ({ inline_data: { mime_type: chart.mimetype, data: chart.buffer.toString('base64') } }))
-  ];
-  const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!response.ok) return fail(res, 502, 'Analysis provider returned an error.');
-  const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
-  const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
-  let result; try { result = JSON.parse(cleaned); } catch { return fail(res, 502, 'Analysis response was not valid JSON.'); }
-  await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(result)]);
-  res.json({ ok: true, result });
+
+    const parts = [
+      { text: prompt },
+      ...charts.map(chart => ({ inline_data: { mime_type: chart.mimetype, data: chart.buffer.toString('base64') } }))
+    ];
+
+    const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+
+    // استخدام النموذج المعتمد المخصص للصور والشارتات gemini-1.5-flash
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("Gemini API Error Response:", errText);
+      return fail(res, 502, `Analysis provider error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.find(p => p.text)?.text || '';
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+
+    let result;
+    try {
+      result = JSON.parse(cleaned);
+    } catch {
+      return fail(res, 502, 'Analysis response was not valid JSON.');
+    }
+
+    await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(result)]);
+    res.json({ ok: true, result });
+
+  } catch (error) {
+    console.error("Unhandled Error in Chart Analysis:", error);
+    return fail(res, 500, error.message || "Internal server error during analysis.");
+  }
 });
 
 app.get('/api/admin/payments', auth, admin, async (_req, res) => {
