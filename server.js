@@ -7,7 +7,7 @@ import pg from 'pg';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const { Pool } = pg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -61,9 +61,9 @@ app.use(helmet({
     directives: { 
       defaultSrc: ["'self'"], 
       scriptSrc: ["'self'"], 
-      styleSrc: ["'self'", "'unsafe-inline'", '[https://fonts.googleapis.com](https://fonts.googleapis.com)'], 
-      fontSrc: ["'self'", '[https://fonts.gstatic.com](https://fonts.gstatic.com)'], 
-      imgSrc: ["'self'", 'data:', 'blob:', '[https://api.qrserver.com](https://api.qrserver.com)'], 
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'], 
+      fontSrc: ["'self'", 'https://fonts.gstatic.com'], 
+      imgSrc: ["'self'", 'data:', 'blob:', 'https://api.qrserver.com'], 
       connectSrc: ["'self'"], 
       objectSrc: ["'none'"], 
       baseUri: ["'self'"], 
@@ -244,17 +244,9 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     if (!apiKey) return fail(res, 503, 'Chart analysis service is not configured yet (GEMINI_API_KEY missing).');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
-      ]
-    });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-    const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond in strict JSON matching this exact structure:
+    const prompt = `You are a professional SMC trading assistant. Analyze the chart screenshot(s) and respond ONLY in a raw valid JSON object (no markdown, no backticks, no wrapping text) with this exact structure:
 {
   "marketBias": "bullish, bearish, range, or unclear",
   "timeframes": "readable timeframe or null",
@@ -286,8 +278,8 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
     let analysisResult; 
     try { 
       analysisResult = JSON.parse(cleaned); 
-    } catch { 
-      return fail(res, 502, 'Invalid response format from AI provider.'); 
+    } catch (parseErr) { 
+      return fail(res, 400, `AI returned text, but invalid JSON format: ${text.slice(0, 100)}`); 
     }
 
     await pool.query('INSERT INTO analyses (id,user_id,result_json) VALUES ($1,$2,$3)', [newId(), req.user.id, JSON.stringify(analysisResult)]);
@@ -295,7 +287,7 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
 
   } catch (error) {
     console.error("Gemini Execution Error:", error);
-    return fail(res, 502, `Analysis failed: ${error.message || 'Provider Error'}`);
+    return fail(res, 400, `Gemini API Error: ${error.message || 'Unknown Error'}`);
   }
 });
 
