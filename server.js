@@ -112,7 +112,7 @@ function cookieOptions(maxAge) { return { httpOnly: true, secure: isProd, sameSi
 function sameOrigin(req) {
   if (!isProd) return true;
   const origin = req.get('origin');
-  const base = process.env.PUBLIC_BASE_URL;
+  const base = process.process.env.PUBLIC_BASE_URL;
   return !origin || !base || origin === base;
 }
 
@@ -269,15 +269,36 @@ app.post('/api/chart/analyze', auth, upload.array('charts', MAX_CHART_IMAGES), a
       }
     }));
 
-    // التعديل الجوهري: استخدام المسمى المتوافق عالمياً ومباشرة مع الإصدار الحديث
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      generationConfig: { 
-        responseMimeType: "application/json" 
-      }
-    });
+    // قائمة نماذج متتالية لتفادي أخطاء 404 بناءً على صلاحيات مفتاح الـ API
+    const candidateModels = [
+      "gemini-2.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-flash",
+      "gemini-1.5-pro",
+      "gemini-pro-vision"
+    ];
 
-    const result = await model.generateContent([prompt, ...imageParts]);
+    let result = null;
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          generationConfig: { responseMimeType: "application/json" }
+        });
+        result = await model.generateContent([prompt, ...imageParts]);
+        if (result) break; // نجاح الطلب
+      } catch (err) {
+        console.warn(`Attempt with model '${modelName}' failed: ${err.message}`);
+        lastError = err;
+      }
+    }
+
+    if (!result) {
+      throw lastError || new Error("All candidate Gemini models failed to generate content.");
+    }
+
     const response = await result.response;
     const text = response.text();
 
